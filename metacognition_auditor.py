@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
 metacognition_auditor.py
-AriaWave METACOGNITION™ (v1.0.0) — Deterministic Self-Auditing Recursive Agent Harness.
+AriaWave METACOGNITION™ (v1.1.0) — Deterministic Self-Auditing Recursive Agent Harness.
 
 Built and operated by Aria Technology Group LLC (https://www.ariawave.tech)
 127 E 3rd St, Rochester, MI 48307 | (248) 429-1497
 Authors: Andrew Jennings (CAIO) & Dominic Serra (Principal Architect)
 
-Implements 4 zero-dependency production guardrails:
+Implements 6 zero-dependency production guardrails:
   1. Epistemic Confidence & Entropy Firewall (ECEF)
   2. Read-Live / Write-Draft MCP Cleanroom Gate (HMAC-SHA256 HITL verification)
   3. Anti-Amnesia Tool-Loop Detector & 180KB Rolling Context Budget Slimmer
   4. Pre-Flight URL / Soft-404 Content Verifier
+  5. Multi-Lane Inference Admission & Cron Contention Auditor
+  6. Dual-Surface Singleton & Split-Brain Config Verifier
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ import math
 import re
 import sys
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -262,6 +264,406 @@ def audit_outbound_url_response(url: str, status_code: int, html_snippet: str) -
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 5. Multi-Lane Inference Admission & Cron Contention Auditor (Guardrail #5)
+# ─────────────────────────────────────────────────────────────────────────────
+@dataclass
+class LaneViolation:
+    job_id: str
+    job_name: str
+    violation_type: str  # "INTERACTIVE_LANE_SQUATTING", "UNPINNED_MODEL_DRIFT", "MISSING_SILENT_GATE"
+    details: str
+    remediation: str
+
+
+@dataclass
+class GuardrailResult:
+    passed: bool
+    guardrail: str
+    summary: str
+    violations: List[Dict[str, Any]]
+    details: Dict[str, Any]
+    is_clean: bool = True
+    is_healthy: bool = True
+    squatting_count: int = 0
+    unpinned_count: int = 0
+    noisy_count: int = 0
+    conflicts: List[str] = None
+    drift_keys: Dict[str, Any] = None
+    remediations: List[str] = None
+
+    def __post_init__(self):
+        if self.conflicts is None:
+            self.conflicts = []
+        if self.drift_keys is None:
+            self.drift_keys = {}
+        if self.remediations is None:
+            self.remediations = []
+        self.is_clean = self.passed
+        self.is_healthy = self.passed
+
+
+# Type aliases for API flexibility
+LaneAuditVerdict = GuardrailResult
+SurfaceConfigVerdict = GuardrailResult
+
+
+def audit_inference_lane_isolation(
+    jobs_data: Any,
+    interactive_port: int = 8420,
+    interactive_providers: Sequence[str] = ("agy", "interactive", "primary", "default", ""),
+    interactive_ports: Sequence[int] = (8420,),
+    allowed_background_providers: Sequence[str] = ("custom:agy-background", "background", "secondary", "batch"),
+    high_frequency_threshold_minutes: int = 180,
+) -> GuardrailResult:
+    """
+    Audits scheduled/background cron jobs against interactive lane contention,
+    model-drift hazards, and notification spam.
+    
+    Zero-dependency, portable, and deterministic.
+    """
+    if isinstance(jobs_data, dict):
+        if "jobs" in jobs_data and isinstance(jobs_data["jobs"], list):
+            jobs = jobs_data["jobs"]
+        elif "cron_jobs" in jobs_data and isinstance(jobs_data["cron_jobs"], list):
+            jobs = jobs_data["cron_jobs"]
+        else:
+            jobs = [jobs_data]
+    elif isinstance(jobs_data, (list, tuple)):
+        jobs = list(jobs_data)
+    else:
+        jobs = [jobs_data]
+
+    violations: List[Dict[str, Any]] = []
+    remediations: List[str] = []
+    squatting_count = 0
+    unpinned_count = 0
+    noisy_count = 0
+    target_ports = set(interactive_ports) | {interactive_port}
+
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+
+        job_id = str(job.get("id") or job.get("job_id") or "unknown_job")
+        job_name = str(job.get("name") or job.get("title") or job_id)
+        enabled = job.get("enabled", True)
+        no_agent = job.get("no_agent", False)
+
+        # Only evaluate enabled jobs that execute LLM agent turns
+        if not enabled or no_agent:
+            continue
+
+        provider = str(job.get("provider") or "").strip()
+        provider_lower = provider.lower()
+        base_url = str(job.get("base_url") or job.get("url") or job.get("endpoint") or "")
+
+        # 1. Interactive Lane Squatting Check
+        is_squatting = False
+        squat_reason = ""
+        if not provider or provider_lower in [p.lower() for p in interactive_providers]:
+            is_squatting = True
+            squat_reason = f"Provider '{provider or '<null>'}' is mapped to interactive primary lane."
+        elif any(f":{p}" in base_url or f":{p}" in provider for p in target_ports):
+            is_squatting = True
+            squat_reason = f"Endpoint/Provider targets interactive port ({target_ports})."
+
+        if is_squatting:
+            squatting_count += 1
+            v = LaneViolation(
+                job_id=job_id,
+                job_name=job_name,
+                violation_type="INTERACTIVE_LANE_SQUATTING",
+                details=f"Job routes to interactive inference lane: {squat_reason}",
+                remediation="Pin provider to isolated background lane (e.g. 'custom:agy-background' on port 8790).",
+            )
+            violations.append(asdict(v))
+            remediations.append(f"[{job_id}] Pin to background provider: 'custom:agy-background'")
+
+        # 2. Unpinned Model Drift Hazard Check
+        model = job.get("model")
+        last_error = str(job.get("last_error") or "").lower()
+        is_unpinned = False
+        unpinned_reason = ""
+
+        if not model or str(model).strip() == "":
+            is_unpinned = True
+            unpinned_reason = "Model field is null or empty string."
+        elif "unintended spend" in last_error or "unpinned" in last_error:
+            is_unpinned = True
+            unpinned_reason = f"Model drift triggered safeguard: {job.get('last_error')}"
+
+        if is_unpinned:
+            unpinned_count += 1
+            v = LaneViolation(
+                job_id=job_id,
+                job_name=job_name,
+                violation_type="UNPINNED_MODEL_DRIFT",
+                details=f"Hazard of unpinned model drift or spending block: {unpinned_reason}",
+                remediation="Pin explicit model (e.g. 'antigravity-flash' or 'gemini-4-argon-medium').",
+            )
+            violations.append(asdict(v))
+            remediations.append(f"[{job_id}] Pin explicit model: 'antigravity-flash'")
+
+        # 3. Missing [SILENT] Delta-Gate Check
+        is_high_freq = False
+        interval = job.get("interval_minutes")
+        if interval is not None:
+            try:
+                if int(interval) <= high_frequency_threshold_minutes:
+                    is_high_freq = True
+            except (ValueError, TypeError):
+                pass
+
+        schedule = str(job.get("schedule") or job.get("cron") or job.get("cron_expression") or "")
+        if schedule:
+            parts = schedule.strip().split()
+            if len(parts) >= 5:
+                # cron: minute hour dom month dow
+                hour_part = parts[1]
+                min_part = parts[0]
+                if hour_part == "*" or any(hour_part.startswith(f"*/{h}") for h in ("1", "2", "3")) or min_part.startswith("*/"):
+                    is_high_freq = True
+            elif any(token in schedule.lower() for token in ("hourly", "30m", "every")):
+                is_high_freq = True
+
+        if is_high_freq:
+            prompt_text = " ".join([
+                str(job.get("prompt") or ""),
+                str(job.get("instructions") or ""),
+                str(job.get("message") or "")
+            ])
+            has_silent_gate = (
+                "[silent]" in prompt_text.lower()
+                or "silent when" in prompt_text.lower()
+                or "delta gate" in prompt_text.lower()
+            )
+            if not has_silent_gate:
+                noisy_count += 1
+                v = LaneViolation(
+                    job_id=job_id,
+                    job_name=job_name,
+                    violation_type="MISSING_SILENT_GATE",
+                    details=f"High-frequency autonomous job (schedule: '{schedule or interval}m') lacks [SILENT] delta-gating.",
+                    remediation="Inject [SILENT] instruction to ensure zero notifications when no state delta exists.",
+                )
+                violations.append(asdict(v))
+                remediations.append(f"[{job_id}] Add [SILENT] gating instruction to prompt")
+
+    passed = (len(violations) == 0)
+    summary = (
+        f"Audited {len(jobs)} jobs: all inference lanes isolated, models pinned, and notifications delta-gated."
+        if passed
+        else f"Audited {len(jobs)} jobs: found {len(violations)} lane/drift/noise violations ({squatting_count} squatting, {unpinned_count} unpinned, {noisy_count} noisy)."
+    )
+
+    return GuardrailResult(
+        passed=passed,
+        guardrail="Multi-Lane Inference Admission & Cron Contention Auditor",
+        summary=summary,
+        violations=violations,
+        details={
+            "total_audited": len(jobs),
+            "squatting_count": squatting_count,
+            "unpinned_count": unpinned_count,
+            "noisy_count": noisy_count,
+        },
+        is_clean=passed,
+        is_healthy=passed,
+        squatting_count=squatting_count,
+        unpinned_count=unpinned_count,
+        noisy_count=noisy_count,
+        remediations=remediations,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Dual-Surface Singleton & Split-Brain Config Verifier (Guardrail #6)
+# ─────────────────────────────────────────────────────────────────────────────
+def _resolve_nested_key(cfg: Dict[str, Any], key_path: str) -> Any:
+    if key_path in cfg:
+        return cfg[key_path]
+    parts = key_path.split(".")
+    curr: Any = cfg
+    for p in parts:
+        if isinstance(curr, dict) and p in curr:
+            curr = curr[p]
+        else:
+            return None
+    return curr
+
+
+def audit_surface_singleton_and_config_parity(
+    processes: Any,
+    config_data: Any,
+    singleton_targets: Sequence[str] = ("remote-control serve", "remote_control_serve"),
+    supervisor_targets: Sequence[str] = ("supervise_remote_control.py", "supervise_remote_control"),
+    required_invariants: Optional[Dict[str, Any]] = None,
+) -> GuardrailResult:
+    """
+    Verifies that singleton daemons do not suffer shared-UUID collision storms and
+    parallel agent surface configs do not suffer split-brain drift (e.g. queue vs steer).
+    
+    Zero-dependency, portable, and deterministic.
+    """
+    conflicts: List[str] = []
+    drift_keys: Dict[str, Any] = {}
+    remediations: List[str] = []
+    violations: List[Dict[str, Any]] = []
+
+    # 1. Process Singleton and Supervision Analysis
+    process_counts: Dict[str, int] = {}
+    if isinstance(processes, dict):
+        process_counts = dict(processes)
+    elif isinstance(processes, (list, tuple)):
+        for item in processes:
+            if isinstance(item, str):
+                line = item.lower()
+                for target in list(singleton_targets) + list(supervisor_targets):
+                    if target.lower() in line:
+                        process_counts[target] = process_counts.get(target, 0) + 1
+            elif isinstance(item, dict):
+                cmd = " ".join([
+                    str(item.get("name") or ""),
+                    str(item.get("cmdline") or ""),
+                    str(item.get("cmd") or ""),
+                    str(item.get("command") or ""),
+                ]).lower()
+                for target in list(singleton_targets) + list(supervisor_targets):
+                    if target.lower() in cmd:
+                        process_counts[target] = process_counts.get(target, 0) + 1
+
+    # Check singleton targets
+    for target in singleton_targets:
+        cnt = process_counts.get(target, 0)
+        if cnt == 0:
+            cnt = sum(c for k, c in process_counts.items() if target.lower() in k.lower())
+
+        if cnt > 1:
+            msg = f"SINGLETON_COLLISION_HAZARD: Multiple '{target}' instances running concurrently ({cnt} > 1). Shared installation_uuid WebChannel storm risk."
+            conflicts.append(msg)
+            violations.append({"type": "SINGLETON_COLLISION_HAZARD", "target": target, "count": cnt, "details": msg})
+            remediations.append(f"Kill duplicate '{target}' processes to maintain strict singleton daemon.")
+
+        # Supervisor check
+        sup_cnt = sum(process_counts.get(s, 0) for s in supervisor_targets)
+        if sup_cnt == 0:
+            sup_cnt = sum(c for k, c in process_counts.items() if any(s.lower() in k.lower() for s in supervisor_targets))
+
+        if cnt >= 1 and sup_cnt == 0:
+            msg = f"ORPHAN_UNSUPERVISED_SINGLETON: '{target}' is running ({cnt} instance) but supervisor '{supervisor_targets[0]}' is dead/missing."
+            conflicts.append(msg)
+            violations.append({"type": "ORPHAN_UNSUPERVISED_SINGLETON", "target": target, "details": msg})
+            remediations.append(f"Launch supervisor daemon: '{supervisor_targets[0]}'.")
+
+    # 2. Config Invariants & Split-Brain Analysis
+    if required_invariants is None:
+        required_invariants = {
+            "display.busy_input_mode": "steer",
+            "display.busy_text_mode": "steer",
+            "gateway.busy_input_mode": "steer",
+            "display.platforms.telegram.tool_progress": ["edit", "off"],
+        }
+
+    # Extract configs / surfaces
+    surfaces: Dict[str, Dict[str, Any]] = {}
+    if isinstance(config_data, dict):
+        sub_surfaces = {
+            k: v for k, v in config_data.items()
+            if isinstance(v, dict) and any(
+                isinstance(_resolve_nested_key(v, req), (str, int, bool))
+                for req in ("display.busy_input_mode", "gateway.busy_input_mode", "busy_input_mode")
+            )
+        }
+        if sub_surfaces and len(sub_surfaces) >= 2:
+            surfaces = sub_surfaces
+        else:
+            surfaces = {"primary": config_data}
+    elif isinstance(config_data, (list, tuple)):
+        for idx, item in enumerate(config_data):
+            if isinstance(item, dict):
+                surfaces[f"surface_{idx}"] = item
+    else:
+        surfaces = {"primary": {}}
+
+    # Invariant Checks
+    for s_name, cfg in surfaces.items():
+        for req_key, expected in required_invariants.items():
+            val = _resolve_nested_key(cfg, req_key)
+            if val is None:
+                short_key = req_key.split(".")[-1]
+                val = cfg.get(short_key)
+
+            if val is not None:
+                if isinstance(expected, (list, tuple, set)):
+                    if val not in expected:
+                        msg = f"CONFIG_INVARIANT_VIOLATION [{s_name}]: '{req_key}' is '{val}', expected one of {expected}."
+                        conflicts.append(msg)
+                        violations.append({"type": "CONFIG_INVARIANT_VIOLATION", "surface": s_name, "key": req_key, "value": val, "expected": list(expected)})
+                        remediations.append(f"[{s_name}] Set '{req_key}' to '{expected[0]}'")
+                else:
+                    if val != expected:
+                        if val == "queue" and expected == "steer":
+                            msg = f"SPLIT_BRAIN_DRIFT [{s_name}]: '{req_key}' is set to 'queue' instead of 'steer', causing single-threaded session stalls."
+                        else:
+                            msg = f"CONFIG_INVARIANT_VIOLATION [{s_name}]: '{req_key}' is '{val}', expected '{expected}'."
+                        conflicts.append(msg)
+                        violations.append({"type": "SPLIT_BRAIN_DRIFT" if val == "queue" else "CONFIG_INVARIANT_VIOLATION", "surface": s_name, "key": req_key, "value": val, "expected": expected})
+                        remediations.append(f"[{s_name}] Update '{req_key}' to '{expected}'")
+
+        # Internal parity check within a single surface config
+        bim = _resolve_nested_key(cfg, "display.busy_input_mode")
+        gim = _resolve_nested_key(cfg, "gateway.busy_input_mode")
+        btm = _resolve_nested_key(cfg, "display.busy_text_mode")
+        modes = [m for m in (bim, gim, btm) if m is not None]
+        if "queue" in modes and "steer" in modes:
+            msg = f"SPLIT_BRAIN_DRIFT [{s_name}]: Internal mode collision between display ({bim}/{btm}) and gateway ({gim}). Both must be 'steer'."
+            conflicts.append(msg)
+            violations.append({"type": "INTERNAL_SPLIT_BRAIN", "surface": s_name, "display_mode": bim, "gateway_mode": gim})
+            remediations.append(f"[{s_name}] Align all busy modes to 'steer'.")
+
+    # Cross-Surface Drift Check
+    if len(surfaces) > 1:
+        surface_names = list(surfaces.keys())
+        for req_key in required_invariants.keys():
+            vals = {}
+            for s_name in surface_names:
+                v = _resolve_nested_key(surfaces[s_name], req_key)
+                if v is not None:
+                    vals[s_name] = v
+            unique_vals = set(vals.values())
+            if len(unique_vals) > 1:
+                msg = f"CROSS_SURFACE_DRIFT: Invariant '{req_key}' diverged across surfaces: {vals}."
+                conflicts.append(msg)
+                drift_keys[req_key] = vals
+                violations.append({"type": "CROSS_SURFACE_DRIFT", "key": req_key, "values": vals})
+                remediations.append(f"Synchronize '{req_key}' across all surfaces to match production baseline.")
+
+    passed = (len(conflicts) == 0 and len(violations) == 0)
+    summary = (
+        "All surface singletons healthy and configuration parity verified across all agent surfaces."
+        if passed
+        else f"Surface audit failed: {len(conflicts)} conflict(s) detected across singletons and configuration parity."
+    )
+
+    return GuardrailResult(
+        passed=passed,
+        guardrail="Dual-Surface Singleton & Split-Brain Config Verifier",
+        summary=summary,
+        violations=violations,
+        details={
+            "conflicts_count": len(conflicts),
+            "surfaces_evaluated": list(surfaces.keys()),
+            "drift_keys": drift_keys,
+        },
+        is_clean=passed,
+        is_healthy=passed,
+        conflicts=conflicts,
+        drift_keys=drift_keys,
+        remediations=remediations,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Deterministic Self-Test Suite
 # ─────────────────────────────────────────────────────────────────────────────
 def run_selftest() -> int:
@@ -335,19 +737,112 @@ def run_selftest() -> int:
     )
     assert not bad_url and "SOFT_404_DETECTED" in bad_reason
 
+    # 5. Test Multi-Lane Inference Admission & Cron Contention Auditor (Guardrail #5)
+    dirty_jobs = [
+        {
+            "id": "job_squat",
+            "name": "Hourly Trends Scraper",
+            "provider": "agy",
+            "base_url": "http://127.0.0.1:8420/v1",
+            "model": "antigravity-flash",
+            "interval_minutes": 60,
+            "prompt": "Scrape trends [SILENT]",
+        },
+        {
+            "id": "job_drift",
+            "name": "Outreach Sales Agent",
+            "provider": "custom:agy-background",
+            "model": "",
+            "last_error": "Skipped to prevent unintended spend: model not specified",
+            "interval_minutes": 60,
+            "prompt": "Find leads [SILENT]",
+        },
+        {
+            "id": "job_noisy",
+            "name": "Health Pinger",
+            "provider": "custom:agy-background",
+            "model": "antigravity-flash",
+            "interval_minutes": 30,
+            "prompt": "Unconditional status dump to Telegram",
+        },
+    ]
+    dirty_lane_verdict = audit_inference_lane_isolation(dirty_jobs)
+    assert not dirty_lane_verdict.passed, "Expected dirty jobs to fail lane audit"
+    assert dirty_lane_verdict.squatting_count == 1
+    assert dirty_lane_verdict.unpinned_count == 1
+    assert dirty_lane_verdict.noisy_count == 1
+    assert len(dirty_lane_verdict.violations) == 3
+
+    clean_jobs = [
+        {
+            "id": "job_sales_clean",
+            "name": "Outbound Engagement & Sales Agent",
+            "provider": "custom:agy-background",
+            "model": "antigravity-flash",
+            "interval_minutes": 60,
+            "prompt": "Process qualified leads. [SILENT] when no new verified leads exist.",
+        },
+        {
+            "id": "job_health_clean",
+            "name": "Hermes Self-Healing Watchdog",
+            "no_agent": True,
+            "interval_minutes": 30,
+        },
+    ]
+    clean_lane_verdict = audit_inference_lane_isolation(clean_jobs)
+    assert clean_lane_verdict.passed and clean_lane_verdict.is_clean, f"Expected clean lane verdict, got: {clean_lane_verdict}"
+    assert len(clean_lane_verdict.violations) == 0
+
+    # 6. Test Dual-Surface Singleton & Split-Brain Config Verifier (Guardrail #6)
+    dirty_processes = [
+        "agy.exe remote-control serve",
+        "agy.exe remote-control serve",  # Duplicate process collision!
+    ]
+    dirty_config = {
+        "display": {"busy_input_mode": "steer", "busy_text_mode": "steer"},
+        "gateway": {"busy_input_mode": "queue"},  # Split-brain drift!
+        "display.platforms.telegram.tool_progress": "new",  # Invalid progress mode!
+    }
+    dirty_surface_verdict = audit_surface_singleton_and_config_parity(dirty_processes, dirty_config)
+    assert not dirty_surface_verdict.passed, "Expected dirty surface to fail"
+    assert len(dirty_surface_verdict.conflicts) >= 2
+
+    clean_processes = [
+        "agy.exe remote-control serve",
+        "python supervise_remote_control.py",
+    ]
+    clean_config = {
+        "display": {"busy_input_mode": "steer", "busy_text_mode": "steer"},
+        "gateway": {"busy_input_mode": "steer"},
+        "display.platforms.telegram.tool_progress": "edit",
+    }
+    clean_surface_verdict = audit_surface_singleton_and_config_parity(clean_processes, clean_config)
+    assert clean_surface_verdict.passed and clean_surface_verdict.is_healthy, f"Expected clean surface verdict, got: {clean_surface_verdict}"
+    assert len(clean_surface_verdict.conflicts) == 0
+
     print(
         json.dumps(
             {
                 "status": "PASS",
-                "engine": "AriaWave METACOGNITION™ v1.0.0",
+                "engine": "AriaWave METACOGNITION™ v1.1.0",
                 "checks_verified": [
                     "Epistemic Confidence & Entropy Firewall (ECEF)",
                     "Read-Live / Write-Draft MCP Cleanroom Gate (HMAC-SHA256)",
                     "Anti-Amnesia Loop Detector & 180KB Rolling Context Slimmer",
                     "Pre-Flight URL & Soft-404 Verifier",
+                    "Multi-Lane Inference Admission & Cron Contention Auditor",
+                    "Dual-Surface Singleton & Split-Brain Config Verifier",
                 ],
                 "sample_epistemic_verdict": asdict(high_verdict),
                 "budget_compression": {"before_chars": before_chars, "after_chars": after_chars},
+                "lane_isolation_sample": {
+                    "is_clean": clean_lane_verdict.is_clean,
+                    "violations_caught_in_simulation": len(dirty_lane_verdict.violations),
+                },
+                "surface_singleton_sample": {
+                    "is_healthy": clean_surface_verdict.is_healthy,
+                    "conflicts_caught_in_simulation": len(dirty_surface_verdict.conflicts),
+                },
             },
             indent=2,
         )
