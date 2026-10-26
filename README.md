@@ -1,6 +1,6 @@
-# AriaWave METACOGNITION™ (`v1.0.0`)
+# AriaWave METACOGNITION™ (`v1.1.0`)
 
-**Deterministic Self-Auditing Recursive Agent Harness · Epistemic Confidence & Entropy Firewall (`ECEF`) · Read-Live / Write-Draft MCP Cleanroom Gate (`HMAC-SHA256`) · Anti-Amnesia Loop Detector & `180KB` Rolling Context Slimmer · Pre-Flight Soft-404 Link & Media Verifier**
+**Deterministic Self-Auditing Recursive Agent Harness · Epistemic Confidence & Entropy Firewall (`ECEF`) · Read-Live / Write-Draft MCP Cleanroom Gate (`HMAC-SHA256`) · Anti-Amnesia Loop Detector & `180KB` Rolling Context Slimmer · Pre-Flight Soft-404 Link & Media Verifier · Multi-Lane Inference Admission & Cron Contention Auditor · Dual-Surface Singleton & Split-Brain Config Verifier**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-00f0ff.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-38bdf8.svg)](https://www.python.org/)
@@ -18,23 +18,27 @@ Standard LLM agent wrappers fail silently in production:
 2. **Test-Fixture Contamination & Unguarded Writes:** Synthetic benchmark fixtures (`TEST-FIXTURE-*`) leak into live QuickBooks Online, HubSpot, or Twenty CRM ledgers.
 3. **Infinite Tool Loops & `180KB` Prompt Budget Stalls:** Agents repeat identical search/vision calls until they exceed the `180,000`-character context window and freeze mid-turn.
 4. **Soft-404 Outbound Links:** Single-Page Applications (Next.js / React) return `HTTP 200` on missing routes while rendering `<title>404: This page could not be found</title>`, fooling naive status-code checks.
+5. **Interactive Lane Starvation & Cron Contention:** Background scheduled jobs squat on the primary interactive inference lane (`port 8420`), causing `HTTP 503: Bridge busy` errors and freezing human chat turns.
+6. **Shared-UUID Daemon Collisions & Split-Brain Configuration:** Parallel background daemons sharing an `installation_uuid` enter infinite WebChannel crash loops, while conflicting configuration modes (`queue` vs `steer`) deadlock agent session handling.
 
-**AriaWave METACOGNITION™** wraps every autonomous agent turn in **four zero-dependency mathematical and cryptographic guardrails**:
+**AriaWave METACOGNITION™** wraps every autonomous agent turn in **six zero-dependency mathematical, cryptographic, and operational guardrails**:
 
 ```mermaid
-flowchart LR
-    A["Agent Tool Call Proposal"] --> B["1. Epistemic Confidence & Entropy Firewall (ECEF)"]
+flowchart TD
+    A["Agent Tool Call / Cron Proposal"] --> B["1. Epistemic Confidence & Entropy Firewall (ECEF)"]
     B -->|C >= 0.82| C["2. Read-Live / Write-Draft Cleanroom Gate"]
     B -->|0.55 <= C < 0.82| D["Auto-Downgrade to HITL Draft"]
     B -->|C < 0.55| E["HALT: Low Epistemic Confidence"]
     C -->|HMAC-SHA256 Verified or DRAFT| F["3. Anti-Amnesia Loop & 180KB Context Slimmer"]
     F --> G["4. Pre-Flight URL & Soft-404 Content Gate"]
-    G --> H["Deterministic Execution + Audit Receipt"]
+    G --> H["5. Multi-Lane Inference Admission Auditor"]
+    H --> I["6. Dual-Surface Singleton & Config Verifier"]
+    I --> J["Deterministic Execution + Audit Receipt"]
 ```
 
 ---
 
-## The 4 Deterministic Guardrails
+## The 6 Deterministic Guardrails
 
 ### 1. Epistemic Confidence & Entropy Firewall (`ECEF`)
 Computes a pre-execution epistemic certainty score $C \in [0, 1]$ before any external tool call is permitted:
@@ -56,6 +60,16 @@ Enforces strict separation between read-only telemetry (`LIVE_READ`) and externa
 ### 4. Pre-Flight URL & Soft-404 Verifier
 Inspects both HTTP status codes and HTML `<title>` / body patterns (`404: This page could not be found`, `Page Not Found`, `Profile Not Found`) before staging any social post, client email, or deliverable link.
 
+### 5. Multi-Lane Inference Admission & Cron Contention Auditor (`audit_inference_lane_isolation`)
+- **Interactive Lane Isolation:** Scans background scheduled cron jobs to ensure zero background jobs execute on the interactive human-facing inference lane (`http://127.0.0.1:8420/v1` or `provider: "agy"`). Enforces routing to dedicated background lanes (e.g. `custom:agy-background` on port 8790) to prevent `HTTP 503: Bridge busy` starvation of human turns.
+- **Unpinned Model Drift Hazard Prevention:** Catches jobs with missing or unpinned models that trigger safety circuit breakers (`Skipped to prevent unintended spend`).
+- **High-Frequency `[SILENT]` Delta-Gating:** Enforces mandatory `[SILENT]` delta-gating on high-frequency monitors ($\le 180$ minutes) so autonomous jobs stay quiet when no state changes occur, eliminating hourly notification floods.
+
+### 6. Dual-Surface Singleton & Split-Brain Config Verifier (`audit_surface_singleton_and_config_parity`)
+- **Shared-UUID Collision Elimination:** Audits system processes to ensure singleton daemons (such as `remote-control serve`) never run concurrently with duplicate instances, preventing WebChannel socket collision storms over shared `installation_uuid`.
+- **Supervision Assurance:** Confirms active daemons have a live supervisor process (e.g. `supervise_remote_control.py`).
+- **Split-Brain Configuration Parity:** Audits parallel agent surfaces and gateway configurations to guarantee critical runtime invariants (`busy_input_mode: "steer"` across display and gateway; `tool_progress: "edit"` or `"off"`) and eliminate single-threaded session freeze bugs (`"queue"` mode deadlock).
+
 ---
 
 ## Quick Start & Self-Test
@@ -72,12 +86,14 @@ python metacognition_auditor.py --selftest
 ```json
 {
   "status": "PASS",
-  "engine": "AriaWave METACOGNITION™ v1.0.0",
+  "engine": "AriaWave METACOGNITION™ v1.1.0",
   "checks_verified": [
     "Epistemic Confidence & Entropy Firewall (ECEF)",
     "Read-Live / Write-Draft MCP Cleanroom Gate (HMAC-SHA256)",
     "Anti-Amnesia Loop Detector & 180KB Rolling Context Slimmer",
-    "Pre-Flight URL & Soft-404 Verifier"
+    "Pre-Flight URL & Soft-404 Verifier",
+    "Multi-Lane Inference Admission & Cron Contention Auditor",
+    "Dual-Surface Singleton & Split-Brain Config Verifier"
   ],
   "sample_epistemic_verdict": {
     "confidence_score": 1.0,
@@ -90,6 +106,14 @@ python metacognition_auditor.py --selftest
   "budget_compression": {
     "before_chars": 240590,
     "after_chars": 46630
+  },
+  "lane_isolation_sample": {
+    "is_clean": true,
+    "violations_caught_in_simulation": 3
+  },
+  "surface_singleton_sample": {
+    "is_healthy": true,
+    "conflicts_caught_in_simulation": 4
   }
 }
 ```
